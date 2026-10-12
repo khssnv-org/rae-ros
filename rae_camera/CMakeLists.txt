@@ -64,7 +64,7 @@ add_executable(camera src/camera.cpp)
 add_executable(stereo_depth src/stereo_depth.cpp)
 add_executable(yolo src/yolo.cpp)
 add_executable(stereo_pair src/stereo_pair.cpp)
-add_executable(perception_ipc_rtabmap src/perception_ipc_rtabmap)
+add_executable(perception_ipc_rtabmap src/perception_ipc_rtabmap.cpp)
 
 
 ament_target_dependencies(camera

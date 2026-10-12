@@ -12,6 +12,7 @@ RUN curl --fail --location \
     && dpkg -i /tmp/ros2-apt-source.deb \
     && rm -f /tmp/ros2-apt-source.deb
 
+# Upgrade inherited ROS dependencies for current RTAB-Map binaries and headers.
 RUN apt-get update && apt-get -y install --no-install-recommends \
     software-properties-common \
     libusb-1.0-0-dev \
@@ -25,7 +26,13 @@ RUN apt-get update && apt-get -y install --no-install-recommends \
     alsa-utils \
     mpg123 \
     libmpg123-dev \
-    ros-humble-rtabmap-slam \ 
+    ros-humble-diagnostic-updater \
+    ros-humble-geometry-msgs \
+    ros-humble-message-filters \
+    ros-humble-pcl-ros \
+    ros-humble-tf2 \
+    ros-humble-tf2-ros \
+    ros-humble-rtabmap-slam \
     unzip \
     ffmpeg \
     ros-humble-image-proc \
