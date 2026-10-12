@@ -4,6 +4,14 @@ ARG BUILD_TYPE="RelWithDebInfo"
 ARG SIM=0
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Replace the expired ROS repository key inherited from the base image.
+RUN curl --fail --location \
+        -o /tmp/ros2-apt-source.deb \
+        "https://github.com/ros-infrastructure/ros-apt-source/releases/download/1.3.0/ros2-apt-source_1.3.0.jammy_all.deb" \
+    && rm -f /etc/apt/sources.list.d/ros2-latest.list \
+    && dpkg -i /tmp/ros2-apt-source.deb \
+    && rm -f /tmp/ros2-apt-source.deb
+
 RUN apt-get update && apt-get -y install --no-install-recommends \
     software-properties-common \
     libusb-1.0-0-dev \
