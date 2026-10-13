@@ -64,3 +64,5 @@ Verify control-only and combined startup, bounded constant-speed commands,
 restart, and failure paths. Confirm `0x00000000` before motor activation and
 PWM1/2 disabled with zero duty cycle after stopping. This verifies startup;
 floor motion and encoder/odometry calibration are separate checks.
+
+See [robot validation results](pwm-validation-2026-10-13.md).
