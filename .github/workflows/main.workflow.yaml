@@ -70,9 +70,13 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
         with:
-          # Work around the ARM64 libc-bin crash with newer QEMU.
-          # Regression: https://github.com/tonistiigi/binfmt/issues/245
-          image: tonistiigi/binfmt:qemu-v8.1.5
+          # Pin before the QEMU 8.1.1 ARM64 ldconfig regression:
+          # https://gitlab.com/qemu-project/qemu/-/issues/1913
+          # The 8.1.5 workaround from binfmt#245 still crashed libc-bin:
+          # https://github.com/khssnv-org/rae-ros/actions/runs/38356684604
+          # Ubuntu 22.04 ldconfig checks passed with this version upstream:
+          # https://github.com/tonistiigi/binfmt/issues/298#issuecomment-4671991311
+          image: tonistiigi/binfmt:qemu-v8.0.4-33
           platforms: arm64
 
       - name: Set up Docker Buildx
@@ -84,6 +88,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check ARM64 ldconfig
+        # Check the Dockerfile's base image before installing dependencies.
+        run: |
+          docker run --rm --platform linux/arm64 --entrypoint /sbin/ldconfig \
+            ghcr.io/luxonis/rae-base:2024.01.18-humble
+
       - name: Get Version
         if: env.PUSH == 'true'
         id: vars
