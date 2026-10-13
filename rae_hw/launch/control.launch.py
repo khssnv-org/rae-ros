@@ -11,8 +11,13 @@ from launch_ros.event_handlers import OnStateTransition
 from launch_ros.actions import Node, LifecycleNode
 import xacro
 
+from rae_hw.pwm_launch import hardware_session
+
 
 def launch_setup(context, *args, **kwargs):
+    # RaeHW enables PWM during on_configure, before the controller spawner.
+    pwm = hardware_session(context)
+    pwm.start_motors()
     rae_description_path = os.path.join(get_package_share_directory(
         'rae_description'), 'urdf', 'rae.urdf.xacro')
     rae_description_config = xacro.process_file(rae_description_path)
@@ -114,6 +119,11 @@ def launch_setup(context, *args, **kwargs):
             namespace=LaunchConfiguration('namespace'),
         )
 
+    def launch_motors(ctx):
+        # Recheck after peripheral startup, immediately before ros2_control.
+        pwm.initialize()
+        return [controller_manager, diff_controller, joint_state_broadcaster]
+
     return [
         lifecycle_manager,
         led,
@@ -126,9 +136,7 @@ def launch_setup(context, *args, **kwargs):
                       speakers,
                       robot_state_pub,
                       ekf_node,
-                      controller_manager,
-                      diff_controller,
-                      joint_state_broadcaster,
+                      OpaqueFunction(function=launch_motors),
                       sys_info
                       ]
         ))

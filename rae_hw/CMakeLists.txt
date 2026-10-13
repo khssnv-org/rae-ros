@@ -120,6 +120,15 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
   find_package(ament_cmake_gmock REQUIRED)
   find_package(ros2_control_test_assets REQUIRED)
+  find_package(ament_cmake_test REQUIRED)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  foreach(test_name pwm_startup pwm_launch)
+    ament_add_test(${test_name}
+      COMMAND "${Python3_EXECUTABLE}" -m unittest discover
+        -s "${CMAKE_CURRENT_SOURCE_DIR}/test" -p "test_${test_name}.py" -v
+      GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+    )
+  endforeach()
 
   # ament_add_gmock(test_rae_hw test/test_rae_hw.cpp)
   # target_include_directories(test_rae_hw PRIVATE include)
@@ -158,6 +167,7 @@ install(
   scripts/mock/mock_wheels.py
   scripts/lifecycle_manager.py
   scripts/sys_info_node.py
+  scripts/wait_for_camera.py
   DESTINATION lib/${PROJECT_NAME}
 )
 ament_package()

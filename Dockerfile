@@ -19,6 +19,7 @@ RUN apt-get update && apt-get -y install --no-install-recommends \
     python3-colcon-common-extensions \
     python3-rosdep \
     build-essential \
+    busybox-static \
     gpiod \
     libasound2-dev \
     ros-humble-rmw-cyclonedds-cpp \
@@ -40,6 +41,8 @@ RUN apt-get update && apt-get -y install --no-install-recommends \
     htop \
     libsndfile1-dev \
     libsndfile1
+
+RUN busybox --list | grep -qx devmem
 
 RUN pip3 install openai ffmpeg-python
 

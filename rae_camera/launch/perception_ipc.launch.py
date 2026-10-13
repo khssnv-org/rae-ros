@@ -2,11 +2,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, ExecuteProcess, RegisterEventHandler, TimerAction, LogInfo
-from launch.event_handlers import  OnProcessStart
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+
+from rae_hw.pwm_launch import guarded_camera
 
 
 def launch_setup(context, *args, **kwargs):
@@ -16,14 +17,10 @@ def launch_setup(context, *args, **kwargs):
     params_file = LaunchConfiguration('params_file')
     name = LaunchConfiguration('name').perform(context)
     hw_prefix = get_package_share_directory('rae_hw')
-    reset_pwm = ExecuteProcess(
-        cmd=[['busybox devmem 0x20320180 32 0x00000000']],
-        shell=True
-    )
     remappings = [
         #   ('imu', '/imu/data'),
         # ('__camera', 'rae'),
-        ('camera:__node', 'rae'),
+        ('camera:__node', name),
         ('odom', '/diff_controller/odom'),
         ('rgb/image', name+'/right/image_raw'),
         ('rgb/camera_info', name+'/right/camera_info'),
@@ -37,27 +34,14 @@ def launch_setup(context, *args, **kwargs):
             package='rae_camera',
             executable='perception_ipc_rtabmap',
             output='screen',
-            parameters=[params_file],
+            parameters=[params_file, {'camera.i_restart_on_diagnostics_error': False}],
             remappings=remappings
            )
 
-    return [
-        perception,
-        IncludeLaunchDescription(
+    control = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
-                os.path.join(hw_prefix, 'launch', 'control.launch.py'))),
-        RegisterEventHandler(
-            OnProcessStart(
-                target_action=perception,
-                on_start=[
-                    TimerAction(
-                        period=15.0,
-                        actions=[reset_pwm, LogInfo(msg='Resetting PWM.'),],
-                    )
-                ]
-            )
-        ),
-    ]
+                os.path.join(hw_prefix, 'launch', 'control.launch.py')))
+    return guarded_camera(context, perception, name, on_ready=[control])
 
 
 def generate_launch_description():

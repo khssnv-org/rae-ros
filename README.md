@@ -8,3 +8,5 @@ This repository contains rae [ROS](https://www.ros.org/) integration files.
 - [RAE ROS](https://docs-beta.luxonis.com/hardware/rae/rae-ros/)
 - [Hardware](https://docs-beta.luxonis.com/hardware/products/Rae)
 - [Updating firmware](https://docs-beta.luxonis.com/hardware/rae/firmware/)
+
+- [PWM startup and validation](docs/pwm-startup.md)

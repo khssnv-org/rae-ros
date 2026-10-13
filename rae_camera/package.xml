@@ -30,6 +30,7 @@
   <depend>laserscan_kinect</depend>
   <depend>image_proc</depend>
   <depend>rtabmap_odom</depend>
+  <exec_depend>rae_hw</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
