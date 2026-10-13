@@ -5,6 +5,9 @@ the entire controller manager, before its process starts.
 The joint state broadcaster is spawned first; its successful exit admits the
 diff controller spawner after another register readback. Either spawner failing
 shuts down the launch.
+Mic, battery, speakers and system information start after both spawners succeed.
+This keeps LifecycleManager waiting for its peripheral services during controller
+startup, before its controller readiness polling loop can run.
 
 - Control only: `ros2 launch rae_hw control.launch.py` checks that PWM1/2 are
   disabled, clears their duty cycles, writes `0x00000000` to `0x20320180`, and

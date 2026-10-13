@@ -163,7 +163,7 @@ class PwmLaunchTest(unittest.TestCase):
         diff = handlers.call_args_list[1].kwargs['target_action']
         self.assertNotIn(diff, actions)
         self.assertEqual(start_diff(SimpleNamespace(returncode=0), self.context), [diff])
-        self.assertEqual(check_diff(SimpleNamespace(returncode=0), self.context), [])
+        self.assertEqual(len(check_diff(SimpleNamespace(returncode=0), self.context)), 4)
         for handler in (start_diff, check_diff):
             failed = handler(SimpleNamespace(returncode=1), self.context)
             self.assertTrue(any(isinstance(action, EmitEvent) for action in failed))

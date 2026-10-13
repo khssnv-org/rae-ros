@@ -142,7 +142,10 @@ def launch_setup(context, *args, **kwargs):
                 return []
             if event.returncode != 0:
                 return [EmitEvent(event=Shutdown(reason='Diff controller startup failed'))]
-            return []
+            # LifecycleManager waits for mic_node before polling controllers.
+            # Admit the remaining peripherals only after both spawners finish,
+            # so its readiness loop cannot contend with controller startup.
+            return [battery, mic, speakers, sys_info]
 
         return [
             RegisterEventHandler(OnProcessExit(
@@ -157,13 +160,9 @@ def launch_setup(context, *args, **kwargs):
         RegisterEventHandler(OnStateTransition(
             target_lifecycle_node=led,
             goal_state='active',
-            entities=[battery,
-                      mic,
-                      speakers,
-                      robot_state_pub,
+            entities=[robot_state_pub,
                       ekf_node,
                       OpaqueFunction(function=launch_motors),
-                      sys_info
                       ]
         )),
         lifecycle_manager,
