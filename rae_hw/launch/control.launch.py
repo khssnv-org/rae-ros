@@ -125,9 +125,6 @@ def launch_setup(context, *args, **kwargs):
         return [controller_manager, diff_controller, joint_state_broadcaster]
 
     return [
-        lifecycle_manager,
-        led,
-        lcd,
         RegisterEventHandler(OnStateTransition(
             target_lifecycle_node=led,
             goal_state='active',
@@ -139,7 +136,10 @@ def launch_setup(context, *args, **kwargs):
                       OpaqueFunction(function=launch_motors),
                       sys_info
                       ]
-        ))
+        )),
+        lifecycle_manager,
+        led,
+        lcd,
 
     ]
 
