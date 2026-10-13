@@ -69,6 +69,11 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
+        with:
+          # Work around the ARM64 libc-bin crash with newer QEMU.
+          # Regression: https://github.com/tonistiigi/binfmt/issues/245
+          image: tonistiigi/binfmt:qemu-v8.1.5
+          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
