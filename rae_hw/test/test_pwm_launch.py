@@ -147,6 +147,30 @@ class PwmLaunchTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'PWM changed'):
             callback(self.context)
 
+    def test_spawners_are_serialized_and_fail_closed(self):
+        control = load_file('control_launch', Path(__file__).resolve().parents[1]
+                            / 'launch/control.launch.py')
+        self.context.launch_configurations.update({
+            'controller_params_file': '/unused/controller.yaml', 'namespace': ''})
+        with patch.object(control, 'hardware_session', return_value=self.session), \
+                patch.object(control, 'OpaqueFunction', wraps=OpaqueFunction) as opaque:
+            control.launch_setup(self.context)
+            callback = opaque.call_args.kwargs['function']
+        with patch.object(control, 'OnProcessExit', wraps=OnProcessExit) as handlers:
+            actions = callback(self.context)
+        start_diff = handlers.call_args_list[0].kwargs['on_exit']
+        check_diff = handlers.call_args_list[1].kwargs['on_exit']
+        diff = handlers.call_args_list[1].kwargs['target_action']
+        self.assertNotIn(diff, actions)
+        self.assertEqual(start_diff(SimpleNamespace(returncode=0), self.context), [diff])
+        self.assertEqual(check_diff(SimpleNamespace(returncode=0), self.context), [])
+        for handler in (start_diff, check_diff):
+            failed = handler(SimpleNamespace(returncode=1), self.context)
+            self.assertTrue(any(isinstance(action, EmitEvent) for action in failed))
+        self.session.read_register.return_value = 0x1FFFFFFF
+        failed = start_diff(SimpleNamespace(returncode=0), self.context)
+        self.assertNotIn(diff, failed)
+        self.assertTrue(any(isinstance(action, EmitEvent) for action in failed))
 
 
 @unittest.skipUnless(HAS_ROS, 'ROS Python packages are unavailable')

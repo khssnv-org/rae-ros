@@ -4,7 +4,9 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.actions import IncludeLaunchDescription, OpaqueFunction, DeclareLaunchArgument, RegisterEventHandler
+from launch.actions import IncludeLaunchDescription, OpaqueFunction, DeclareLaunchArgument, RegisterEventHandler, EmitEvent
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition
 from launch_ros.event_handlers import OnStateTransition
@@ -16,6 +18,7 @@ from rae_hw.pwm_launch import hardware_session
 
 def launch_setup(context, *args, **kwargs):
     # RaeHW enables PWM during on_configure, before the controller spawner.
+    # Gate the entire controller manager, not just controller activation.
     pwm = hardware_session(context)
     pwm.start_motors()
     rae_description_path = os.path.join(get_package_share_directory(
@@ -120,9 +123,35 @@ def launch_setup(context, *args, **kwargs):
         )
 
     def launch_motors(ctx):
-        # Recheck after peripheral startup, immediately before ros2_control.
+        # Peripheral lifecycle startup may take time. Recheck immediately
+        # before ros2_control can configure (and therefore enable) the motors.
         pwm.initialize()
-        return [controller_manager, diff_controller, joint_state_broadcaster]
+        def start_diff(event, launch_context):
+            if launch_context.is_shutdown:
+                return []
+            if event.returncode != 0:
+                return [EmitEvent(event=Shutdown(
+                    reason='Joint state broadcaster startup failed'))]
+            if pwm.read_register() != 0:
+                return [EmitEvent(event=Shutdown(
+                    reason='PWM changed before diff controller activation'))]
+            return [diff_controller]
+
+        def check_diff(event, launch_context):
+            if launch_context.is_shutdown:
+                return []
+            if event.returncode != 0:
+                return [EmitEvent(event=Shutdown(reason='Diff controller startup failed'))]
+            return []
+
+        return [
+            RegisterEventHandler(OnProcessExit(
+                target_action=joint_state_broadcaster, on_exit=start_diff)),
+            RegisterEventHandler(OnProcessExit(
+                target_action=diff_controller, on_exit=check_diff)),
+            controller_manager,
+            joint_state_broadcaster,
+        ]
 
     return [
         RegisterEventHandler(OnStateTransition(
