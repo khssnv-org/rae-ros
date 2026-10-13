@@ -89,6 +89,9 @@ class PwmStartupTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'Camera'):
             session.start_motors()
         self.assertEqual(self.writes(), [])
+        session.camera_configured()
+        with self.assertRaisesRegex(RuntimeError, 'Camera'):
+            session.start_motors()
         session.finish_camera()
         session.start_motors()
         self.assertEqual(len(self.writes()), 1)
@@ -172,6 +175,7 @@ class PwmStartupTest(unittest.TestCase):
     def test_changed_register_after_camera_blocks_motors(self):
         session = self.session()
         session.begin_camera()
+        session.camera_configured()
         session.finish_camera()
         self.value = 0x1FFFFFFF
         with self.assertRaisesRegex(RuntimeError, 'changed'):

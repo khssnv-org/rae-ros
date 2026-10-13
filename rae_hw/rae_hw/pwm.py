@@ -92,11 +92,17 @@ class PwmStartup:
         self.initialized = False
 
     def finish_camera(self):
-        """Reset and verify PWM after camera pipeline configuration."""
-        if not self.camera_pending or self.camera_failed:
+        """Admit motors only after post-reset camera streams were confirmed."""
+        if not self.camera_pending or self.camera_failed or not self.initialized:
             raise RuntimeError('Unexpected camera readiness result')
         self.camera_pending = False
         self.initialize()
+
+    def camera_configured(self):
+        """Reset after pipeline setup, while still blocking motors until frames."""
+        if not self.camera_pending or self.camera_failed:
+            raise RuntimeError('Unexpected camera configuration result')
+        self._initialize()
 
     def start_motors(self):
         """Admit one controller manager, after checked initialization."""

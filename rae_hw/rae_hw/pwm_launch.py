@@ -26,12 +26,19 @@ def hardware_session(context):
 
 
 def guarded_camera(context, camera, name, on_ready=()):
-    """Wait for camera pipeline setup, reset PWM, then admit follow-up actions."""
+    """Start a camera, wait for readiness, reset PWM, then allow follow-up actions."""
     session = hardware_session(context)
     session.begin_camera()
-    waiter = Node(
+    configured = Node(
         package='rae_hw', executable='wait_for_camera.py',
-        arguments=['--camera', '/' + name.strip('/'), '--timeout', '60'],
+        arguments=['--camera', '/' + name.strip('/'), '--timeout', '60',
+                   '--phase', 'configured'],
+        output='screen',
+    )
+    streams = Node(
+        package='rae_hw', executable='wait_for_camera.py',
+        arguments=['--camera', '/' + name.strip('/'), '--timeout', '60',
+                   '--phase', 'streams'],
         output='screen',
     )
 
@@ -45,20 +52,33 @@ def guarded_camera(context, camera, name, on_ready=()):
             return []
         return failed('Camera process exited; stopping the hardware launch')
 
-    def ready(event, ctx):
+    def reset(event, ctx):
         if ctx.is_shutdown or session.camera_failed:
             return []
         if event.returncode != 0:
             return failed('Camera configuration failed; motors will not start')
         try:
+            session.camera_configured()
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+            return failed(f'PWM initialization failed: {exc}')
+        return [LogInfo(msg='Camera configured; PWM readback 0x00000000.'), streams]
+
+    def ready(event, ctx):
+        if ctx.is_shutdown or session.camera_failed:
+            return []
+        if event.returncode != 0:
+            return failed('Camera readiness failed; motors will not start')
+        try:
             session.finish_camera()
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
             return failed(f'PWM initialization failed: {exc}')
-        return [LogInfo(msg='Camera configured; PWM readback 0x00000000.'), *on_ready]
+        return [LogInfo(msg='Camera ready; PWM readback 0x00000000.'), *on_ready]
 
+    # Register before starting processes: include fast failures in the gate.
     return [
         RegisterEventHandler(OnProcessExit(target_action=camera, on_exit=camera_exited)),
-        RegisterEventHandler(OnProcessExit(target_action=waiter, on_exit=ready)),
+        RegisterEventHandler(OnProcessExit(target_action=configured, on_exit=reset)),
+        RegisterEventHandler(OnProcessExit(target_action=streams, on_exit=ready)),
         camera,
-        waiter,
+        configured,
     ]

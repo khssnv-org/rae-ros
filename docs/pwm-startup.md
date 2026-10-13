@@ -16,8 +16,8 @@ startup, before its controller readiness polling loop can run.
   `bringup.launch.py`) starts the camera first. The camera's `start_camera` service
   signals completion of pipeline setup. The existing 15-second minimum camera
   settling interval is also preserved. The checked reset then runs, followed by
-  control startup. Camera service discovery has a 60-second timeout; the settling
-  interval alone never admits motors.
+  a check for new front/back stereo frames. Only then does control start. Each
+  readiness phase has a 60-second timeout; no elapsed-time action admits motors.
 - `ros2 launch rae_camera rae_camera.launch.py enable_control:=true` uses the
   same sequence. Without that argument it starts only the camera and resets PWM
   after pipeline setup. `perception_ipc.launch.py` uses the same gate for IPC/control.

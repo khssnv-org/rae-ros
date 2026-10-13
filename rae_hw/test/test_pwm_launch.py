@@ -52,7 +52,8 @@ class PwmLaunchTest(unittest.TestCase):
             self.actions = pwm_launch.guarded_camera(
                 self.context, self.camera, 'rae', on_ready=[self.marker])
         self.camera_exit = handlers.call_args_list[0].kwargs['on_exit']
-        self.ready = handlers.call_args_list[1].kwargs['on_exit']
+        self.reset = handlers.call_args_list[1].kwargs['on_exit']
+        self.ready = handlers.call_args_list[2].kwargs['on_exit']
 
     def test_context_shares_one_lease(self):
         self.assertIs(pwm_launch.hardware_session(self.context), self.session)
@@ -70,22 +71,26 @@ class PwmLaunchTest(unittest.TestCase):
     def test_success_requires_reset_before_control(self):
         self.gate()
         self.assertNotIn(self.marker, self.actions)
-        self.assertEqual(self.actions[2], self.camera)
+        self.assertEqual(self.actions[3], self.camera)
+        result = self.reset(SimpleNamespace(returncode=0), self.context)
+        self.session.camera_configured.assert_called_once_with()
+        self.assertNotIn(self.marker, result)
         result = self.ready(SimpleNamespace(returncode=0), self.context)
         self.session.finish_camera.assert_called_once_with()
         self.assertIn(self.marker, result)
 
     def test_readiness_failure_never_resets_or_starts_control(self):
         self.gate()
-        result = self.ready(SimpleNamespace(returncode=1), self.context)
+        result = self.reset(SimpleNamespace(returncode=1), self.context)
+        self.session.camera_configured.assert_not_called()
         self.session.finish_camera.assert_not_called()
         self.assertNotIn(self.marker, result)
         self.assertTrue(any(isinstance(action, EmitEvent) for action in result))
 
     def test_reset_error_never_starts_control(self):
         self.gate()
-        self.session.finish_camera.side_effect = subprocess.CalledProcessError(1, 'busybox')
-        result = self.ready(SimpleNamespace(returncode=0), self.context)
+        self.session.camera_configured.side_effect = subprocess.CalledProcessError(1, 'busybox')
+        result = self.reset(SimpleNamespace(returncode=0), self.context)
         self.assertNotIn(self.marker, result)
         self.assertTrue(self.session.camera_failed)
 
@@ -107,22 +112,24 @@ class PwmLaunchTest(unittest.TestCase):
             with self.subTest(status=status):
                 trace = []
                 self.session.camera_failed = False
-                self.session.finish_camera.side_effect = lambda: trace.append('reset')
+                self.session.camera_configured.side_effect = lambda: trace.append('reset')
+                self.session.finish_camera.side_effect = None
                 service = LaunchService()
                 camera = ExecuteProcess(cmd=['/bin/sleep', '30'])
-                waiter = ExecuteProcess(cmd=['/bin/sh', '-c', f'exit {status}'])
+                configured = ExecuteProcess(cmd=['/bin/true'])
+                streams = ExecuteProcess(cmd=['/bin/sh', '-c', f'exit {status}'])
 
                 def motors(context):
                     trace.append('motors')
                     return [EmitEvent(event=Shutdown(reason='test complete'))]
 
-                with patch.object(pwm_launch, 'Node', return_value=waiter):
+                with patch.object(pwm_launch, 'Node', side_effect=[configured, streams]):
                     actions = pwm_launch.guarded_camera(
                         service.context, camera, 'rae',
                         on_ready=[OpaqueFunction(function=motors)])
                 service.include_launch_description(LaunchDescription(actions))
                 service.run()
-                self.assertEqual(trace, ['reset', 'motors'] if status == 0 else [])
+                self.assertEqual(trace, ['reset', 'motors'] if status == 0 else ['reset'])
 
     def test_control_failure_returns_no_nodes(self):
         control = load_file('control_launch', Path(__file__).resolve().parents[1]
@@ -175,38 +182,74 @@ class PwmLaunchTest(unittest.TestCase):
 
 @unittest.skipUnless(HAS_ROS, 'ROS Python packages are unavailable')
 class CameraReadinessTest(unittest.TestCase):
-    """Require configured camera services before the checked PWM reset."""
+    """Require both live streams, a ready service, and the expected publisher."""
 
     def setUp(self):
-        """Use a fake client without DDS or a physical camera."""
+        """Use callback-driven input without DDS or a physical camera."""
         self.module = load_file('wait_for_camera', Path(__file__).resolve().parents[1]
                                 / 'scripts/wait_for_camera.py')
         self.node = Mock()
         self.client = self.node.create_client.return_value
+        self.client.service_is_ready.return_value = True
+        self.callbacks = {}
 
-    def test_configuration_waits_for_service_and_settling(self):
+        def subscribe(message, topic, callback, qos):
+            self.callbacks[topic] = callback
+            return Mock()
+
+        self.node.create_subscription.side_effect = subscribe
+        self.node.get_publishers_info_by_topic.return_value = [
+            SimpleNamespace(node_name='rae', node_namespace='/')]
+
+    def run_wait(self, streams=('stereo_front', 'stereo_back'), clock=(0, 0, 61)):
+        """Deliver at most one frame per stream, then let the deadline expire."""
+        def spin(node, **kwargs):
+            for stream in streams:
+                self.callbacks[f'/rae/{stream}/image_raw'](Mock())
+
+        with patch.object(self.module.rclpy, 'ok', return_value=True), \
+                patch.object(self.module.rclpy, 'spin_once', side_effect=spin), \
+                patch.object(self.module.time, 'monotonic', side_effect=clock):
+            self.module.wait_for_camera(self.node, '/rae', 60)
+
+    def test_both_streams_and_service_succeed(self):
+        self.run_wait()
+        self.assertEqual(self.node.destroy_subscription.call_count, 2)
+        self.node.destroy_client.assert_called_once_with(self.client)
+
+    def test_configuration_waits_for_service_without_frames(self):
         self.client.wait_for_service.return_value = True
         with patch.object(self.module.time, 'monotonic', side_effect=[0, 3]), \
                 patch.object(self.module.time, 'sleep') as settle:
-            self.module.wait_for_camera(self.node, '/rae', 60)
-            self.client.wait_for_service.assert_called_once_with(timeout_sec=60)
+            self.module.wait_for_camera(self.node, '/rae', 60, 'configured')
             settle.assert_called_once_with(12.0)
-        self.node.destroy_client.assert_called_once_with(self.client)
+        self.node.create_subscription.assert_not_called()
 
     def test_configuration_timeout_fails(self):
         self.client.wait_for_service.return_value = False
         with patch.object(self.module.time, 'sleep') as settle:
             with self.assertRaisesRegex(RuntimeError, 'pipeline configuration'):
-                self.module.wait_for_camera(self.node, '/rae', 60)
+                self.module.wait_for_camera(self.node, '/rae', 60, 'configured')
             settle.assert_not_called()
-        self.node.destroy_client.assert_called_once_with(self.client)
 
-    def test_late_configuration_needs_no_additional_delay(self):
-        self.client.wait_for_service.return_value = True
-        with patch.object(self.module.time, 'monotonic', side_effect=[0, 20]), \
-                patch.object(self.module.time, 'sleep') as settle:
-            self.module.wait_for_camera(self.node, '/rae', 60)
-            settle.assert_called_once_with(0.0)
+    def test_missing_back_stream_times_out(self):
+        with self.assertRaisesRegex(RuntimeError, 'Timed out'):
+            self.run_wait(streams=('stereo_front',))
+
+    def test_frames_without_ready_service_time_out(self):
+        self.client.service_is_ready.return_value = False
+        with self.assertRaisesRegex(RuntimeError, 'Timed out'):
+            self.run_wait()
+
+    def test_duplicate_publishers_fail(self):
+        self.node.get_publishers_info_by_topic.return_value *= 2
+        with self.assertRaisesRegex(RuntimeError, 'publisher'):
+            self.run_wait()
+
+    def test_frame_before_graph_metadata_waits_for_discovery(self):
+        expected = [SimpleNamespace(node_name='rae', node_namespace='/')]
+        self.node.get_publishers_info_by_topic.side_effect = [[], expected, expected]
+        self.run_wait(clock=(0, 0, 1, 61))
 
 
 if __name__ == '__main__':
